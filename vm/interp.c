@@ -18,6 +18,11 @@
 #include "interp.h"
 #include "persist.h"
 
+// epaper
+#if defined(EPAPER)
+extern void tftServiceEPD();
+#endif
+
 // Tasks - Set USE_TASKS to false to test interpreter performance without task switching
 
 #define USE_TASKS true
@@ -1372,6 +1377,9 @@ void vmLoop() {
 	int currentTaskIndex = 0;
 	int count = 0;
 	while (true) {
+		// epaper
+		tftServiceEPD();
+
 		if (count-- < 0) {
 			// do background VM tasks once every N VM loop cycles
 			processMessage();

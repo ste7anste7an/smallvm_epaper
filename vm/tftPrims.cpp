@@ -30,7 +30,7 @@ static int deferUpdates = false;
 	defined(ARDUINO_NRF52840_CLUE) || defined(ARDUINO_IOT_BUS) || defined(SCOUT_MAKES_AZUL) || \
 	defined(TTGO_RP2040) || defined(TTGO_DISPLAY) || defined(ARDUINO_M5STACK_Core2) || \
 	defined(GAMEPAD_DISPLAY) || defined(PICO_ED) || defined(OLED_128_64) || defined(COCUBE) || \
-	defined(M5Atom_S3_TFT)
+	defined(M5Atom_S3_TFT) || defined(EPAPER)
 
 	#define BLACK 0
 	#define WHITE 65535
@@ -52,6 +52,115 @@ static int deferUpdates = false;
 			tftClear();
 			useTFT = true;
 		}
+
+	#elif defined(EPAPER)
+
+		#include <GxEPD2_BW.h>
+		#include <GxEPD2_3C.h>
+		#include <GxEPD2.h>
+		#include <Fonts/FreeMonoBold12pt7b.h>
+
+		// 2.9" WeActStudio (SSD1680-compatible)
+
+		#define CS_PIN 5
+		#define DC_PIN 15
+		#define RES_PIN 13
+		#define BUSY_PIN 4
+		// GxEPD2_BW<GxEPD2_290, GxEPD2_290::HEIGHT>
+		//   display(GxEPD2_290(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
+
+		// Map “TFT” color names to e-paper colors
+		#undef BLACK
+		#undef WHITE
+		#define BLACK GxEPD_BLACK
+		#define WHITE GxEPD_WHITE
+
+		#define TFT_WIDTH  296   // your panel width
+		#define TFT_HEIGHT 128   // your panel height
+
+		// Adapter: look like a TFT to tftPrims.cpp
+		//   class GxEPD2_290_BS_GFX
+		//     : public GxEPD2_BW<GxEPD2_290_BS,  MAX_HEIGHT(GxEPD2_290_BS)> {
+		//   public:
+		//     using GxEPD2_BW<GxEPD2_290_BS,  MAX_HEIGHT(GxEPD2_290_BS)>::GxEPD2_BW;
+		class GxEPD2_290_BS_GFX
+			: public GxEPD2_BW<GxEPD2_290_BS, GxEPD2_290_T94::HEIGHT> {
+		public:
+			using GxEPD2_BW<GxEPD2_290_BS,  GxEPD2_290_T94::HEIGHT>::GxEPD2_BW;
+
+			// tftPrims uses these on some paths, so implement them in terms of drawPixel
+			void drawRGBBitmap(int16_t x, int16_t y,
+							const uint16_t *bitmap,
+							int16_t w, int16_t h)
+			{
+			for (int16_t yy = 0; yy < h; yy++) {
+				for (int16_t xx = 0; xx < w; xx++) {
+				uint16_t c = bitmap[yy * w + xx];
+				drawPixel(x + xx, y + yy, c);
+				}
+			}
+			}
+
+			void draw16bitRGBBitmap(int16_t x, int16_t y,
+									const uint16_t *bitmap,
+									int16_t w, int16_t h)
+			{
+			drawRGBBitmap(x, y, bitmap, w, h);
+			}
+
+			void pushImage(int16_t x, int16_t y,
+						int16_t w, int16_t h,
+						const uint16_t *bitmap)
+			{
+			drawRGBBitmap(x, y, bitmap, w, h);
+			}
+		};
+
+		// Pins: set these to your wiring
+		//       (CS,  DC,  RST, BUSY)
+
+		// on ESP32 wroom the following connections
+		// SCA 	-- GPIO23
+		// SCL 	-- GPIOGPIO18
+		// CS  	-- GPIO5
+		// DC 	-- GPIO15
+		// RES	-- GPIO13
+		// BUSY	-- GPIO4
+		// VCC	-- 3V3
+		// GND	-- GND
+
+		GxEPD2_290_BS_GFX tft(GxEPD2_290_BS(/*CS=5*/ CS_PIN, /*DC=*/ DC_PIN, /*RES=*/ RES_PIN, /*BUSY=*/ BUSY_PIN)); // DEPG0290BS 128x296, SSD1680
+		//GxEPD2_BW<GxEPD2_290_BS, GxEPD2_290_T94::HEIGHT> display(GxEPD2_290_BS(/*CS=5*/ CS_PIN, /*DC=*/ DC_PIN, /*RES=*/ RES_PIN, /*BUSY=*/ BUSY_PIN)); // DEPG0290BS 128x296, SSD1680
+
+		// E-paper refresh state
+		static bool epdDirty = false;
+		static bool     epdRefreshing  = false;
+			static int16_t  epdStripeY     = 0;
+			static uint32_t epdLastStripe  = 0;
+
+			// Tune these for smoothness vs speed:
+			static const int16_t  EPD_STRIPE_H          = 16;   // stripe height in pixels
+			static const uint32_t EPD_STRIPE_INTERVAL_MS = 20;  // min ms between stripes
+
+		static uint32_t epdLastRefresh = 0;
+		static const uint32_t EPD_MIN_INTERVAL_MS = 500;   // tune as you like
+
+		// For e-paper: don’t refresh immediately. Just mark “dirty”.
+		#undef UPDATE_DISPLAY
+		#define UPDATE_DISPLAY()                        \
+			do {                                          \
+			if (!deferUpdates) epdDirty = true;         \
+			taskSleep(-1); /* keep old yield behaviour */ \
+			} while (0)
+
+		void tftInit() {
+			tft.init(115200, true, 2, false);
+			tft.setRotation(3);
+			tft.fillScreen(BLACK);
+			epdDirty = true;
+			useTFT = true;
+		}
+
 
 	#elif defined(ARDUINO_ESP8266_WEMOS_D1MINI)
 		#include "Adafruit_GFX.h"
@@ -1008,7 +1117,20 @@ uint16_t bufferPixels[BUFFER_PIXELS_SIZE]; // used by primPixelRow and primDrawB
 static int color24to16b(int color24b) {
 	// Convert 24-bit RGB888 format to the TFT's target pixel format.
 	// Return [0..1] for 1-bit display, [0-255] for grayscale, and RGB565 for 16-bit color.
+	
+	//epaper
+	#if defined(EPPAPER)
+		// Map 24-bit color to black/white based on brightness
+		int ir = (color24b >> 16) & 0xFF;
+		int ig = (color24b >> 8)  & 0xFF;
+		int ib =  color24b        & 0xFF;
 
+		// Cheap luminance approximation (0–255)
+		int lum = (ir * 30 + ig * 59 + ib * 11) / 100;
+
+		// Tune 128 to whatever contrast you like (0 = all black, 255 = all white)
+		return (lum < 128) ? BLACK : WHITE;
+		#endif
 	int r, g, b;
 
 	#ifdef IS_MONOCHROME
@@ -1037,8 +1159,12 @@ static int color24to16b(int color24b) {
 
 void tftClear() {
 	if (!hasTFT()) return;
-
-	tft.fillScreen(BLACK);
+	// epaper
+	#if defined(EPAPER)
+		tft.fillScreen(WHITE);
+	#else
+		tft.fillScreen(BLACK);
+	#endif
 	UPDATE_DISPLAY();
 }
 
@@ -1070,11 +1196,21 @@ void tftSetHugePixel(int x, int y, int state) {
 	}
 	int lineWidth = (minDimension > 60) ? 3 : 1;
 	int squareSize = (minDimension - (6 * lineWidth)) / 5;
-	tft.fillRect(
-		xInset + ((x - 1) * squareSize) + (x * lineWidth), // x
-		yInset + ((y - 1) * squareSize) + (y * lineWidth), // y
-		squareSize, squareSize,
-		color24to16b(state ? mbDisplayColor : BLACK));
+
+	// epaper
+	#if defined(EPAPER)
+		tft.fillRect(
+			xInset + ((x - 1) * squareSize) + (x * lineWidth), // x
+			yInset + ((y - 1) * squareSize) + (y * lineWidth), // y
+			squareSize, squareSize,
+			color24to16b(state ? mbDisplayColor : WHITE));
+	#else
+		tft.fillRect(
+			xInset + ((x - 1) * squareSize) + (x * lineWidth), // x
+			yInset + ((y - 1) * squareSize) + (y * lineWidth), // y
+			squareSize, squareSize,
+			color24to16b(state ? mbDisplayColor : BLACK));
+	#endif
 	UPDATE_DISPLAY();
 }
 
@@ -1704,6 +1840,59 @@ static OBJ primAruco(int argCount, OBJ *args) { return falseObj; }
 static OBJ primAprilTag(int argCount, OBJ *args) { return falseObj; }
 
 #endif
+
+// epaper
+// wrap in "C" for usage in interp.c (which is c and no cpp)
+extern "C" void tftServiceEPD(void)
+{
+#if defined(EPAPER)
+
+    if (!useTFT) return;
+
+    uint32_t now = millis();
+
+    if (!epdRefreshing) {
+        if (!epdDirty) return;    // nothing to do
+
+        epdRefreshing = true;
+        epdStripeY    = 0;
+        epdLastStripe = now;
+    }
+
+    // check for interval
+    if ((now - epdLastStripe) < EPD_STRIPE_INTERVAL_MS) return;
+    epdLastStripe = now;
+
+    // Compute stripe height
+    int16_t h = EPD_STRIPE_H;
+    int16_t maxH = tft.height() - epdStripeY;
+    if (h > maxH) h = maxH;
+    if (h <= 0) {
+        epdRefreshing = false;
+        epdDirty = false;
+        return;
+    }
+
+    // Do *one* window refresh for this stripe
+    // This is blocking, but for a small area it’s much shorter.
+    tft.displayWindow(0, epdStripeY, tft.width(), h);
+
+    epdStripeY += h;
+
+    if (epdStripeY >= tft.height()) {
+        // Finished full-screen sweep
+        epdRefreshing = false;
+        epdDirty = false;
+    }
+
+#else
+    (void)0; // no-op when no eink
+#endif
+}
+
+ 
+
+
 
 // Touchscreen Primitives
 
