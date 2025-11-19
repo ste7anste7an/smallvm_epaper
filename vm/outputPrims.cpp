@@ -17,8 +17,11 @@
 // LED Matrix Pins on BBC micro:bit and Calliope
 
 static int disableLEDDisplay = false; // disable micro:bit 5x5 display and light sensor when true
-int mbDisplayColor = 0x00FF00; // Green by default
-
+#if defined(EPAPER)
+ 	int mbDisplayColor = 0x000000; // Green by default
+#else
+ 	int mbDisplayColor = 0x00FF00; // Green by default
+#endif
 #if defined(ARDUINO_BBC_MICROBIT)
 
 #define ROW1 3

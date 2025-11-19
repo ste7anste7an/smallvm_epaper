@@ -66,23 +66,16 @@ static int deferUpdates = false;
 		#define DC_PIN 15
 		#define RES_PIN 13
 		#define BUSY_PIN 4
-		// GxEPD2_BW<GxEPD2_290, GxEPD2_290::HEIGHT>
-		//   display(GxEPD2_290(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
-
+		
 		// Map “TFT” color names to e-paper colors
 		#undef BLACK
 		#undef WHITE
 		#define BLACK GxEPD_BLACK
 		#define WHITE GxEPD_WHITE
 
-		#define TFT_WIDTH  296   // your panel width
-		#define TFT_HEIGHT 128   // your panel height
+		#define TFT_WIDTH  296   // panel width
+		#define TFT_HEIGHT 128   // panel height
 
-		// Adapter: look like a TFT to tftPrims.cpp
-		//   class GxEPD2_290_BS_GFX
-		//     : public GxEPD2_BW<GxEPD2_290_BS,  MAX_HEIGHT(GxEPD2_290_BS)> {
-		//   public:
-		//     using GxEPD2_BW<GxEPD2_290_BS,  MAX_HEIGHT(GxEPD2_290_BS)>::GxEPD2_BW;
 		class GxEPD2_290_BS_GFX
 			: public GxEPD2_BW<GxEPD2_290_BS, GxEPD2_290_T94::HEIGHT> {
 		public:
@@ -120,7 +113,7 @@ static int deferUpdates = false;
 		//       (CS,  DC,  RST, BUSY)
 
 		// on ESP32 wroom the following connections
-		// SCA 	-- GPIO23
+		// SDA 	-- GPIO23
 		// SCL 	-- GPIOGPIO18
 		// CS  	-- GPIO5
 		// DC 	-- GPIO15
@@ -1127,7 +1120,8 @@ static int color24to16b(int color24b) {
 
 		// Cheap luminance approximation (0–255)
 		int lum = (ir * 30 + ig * 59 + ib * 11) / 100;
-
+		lum=200; // default white
+		if ((ir<259) ||(ig<250) || (ib<250)) lum=1; //BLACK
 		// Tune 128 to whatever contrast you like (0 = all black, 255 = all white)
 		return (lum < 128) ? BLACK : WHITE;
 		#endif
