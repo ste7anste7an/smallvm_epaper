@@ -54,7 +54,8 @@ static int deferUpdates = false;
 		}
 
 	#elif defined(EPAPER)
-
+		#define GxEPD2_DEBUG 0 
+		#define DISABLE_DIAGNOSTIC_OUTPUT
 		#include <GxEPD2_BW.h>
 		#include <GxEPD2_3C.h>
 		#include <GxEPD2.h>
@@ -1884,11 +1885,31 @@ extern "C" void tftServiceEPD(void)
 #endif
 }
 
- 
+#if defined(ARDUINO_ARCH_ESP32)
+#include <esp_sleep.h>
+RTC_DATA_ATTR int bootCount = 0;
+
+static OBJ primEspDeepsleep(int argCount, OBJ *args) {
+	uint64_t sleepDurationUs = obj2int(args[0])*1000; // argumnt is sleep time in ms.
+	esp_sleep_enable_timer_wakeup(sleepDurationUs);
+	esp_deep_sleep_start();
+}
+
+static OBJ primEspFromSleep(int argCount, OBJ *args) {
+	 esp_sleep_wakeup_cause_t wakeup_reason;
+	 wakeup_reason = esp_sleep_get_wakeup_cause();
+	bootCount++;
+ 	char s[50];
+	sprintf(s,"wakeup: %d, boot count: %d ",wakeup_reason, bootCount);
+	outputString(s);
+
+	return int2obj((int)wakeup_reason);
+}
+#endif
 
 
 
-// Touchscreen Primitives
+  // Touchscreen Primitives
 
 static OBJ primTftTouched(int argCount, OBJ *args) {
 	#ifdef HAS_TOUCH_SCREEN
@@ -1944,6 +1965,9 @@ static PrimEntry entries[] = {
 	{"tftTouchX", primTftTouchX},
 	{"tftTouchY", primTftTouchY},
 	{"tftTouchPressure", primTftTouchPressure},
+
+	{"espdeepsleep", primEspDeepsleep},
+	{"espfromsleep", primEspFromSleep},
 
 	{"aruco", primAruco},
 	{"aprilTag", primAprilTag},
