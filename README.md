@@ -70,6 +70,42 @@ extern "C" void tftServiceEPD(void) {
 
 `tftServiceEPD()` is called from the VM loop in `interp.c`, allowing the refresh process to run incrementally without blocking the interpreter.
 
+## Summary of integration
+
+```
++----------------------+
+| Drawing Primitive    |
+| (setPixel, rect, ...)|
++----------+-----------+
+           |
+           v
++----------------------+
+| UPDATE_DISPLAY()     |
+| sets epdDirty = true |
++----------+-----------+
+           |
+           v
++----------------------+
+| VM Loop              |
+| calls tftServiceEPD()|
++----------+-----------+
+           |
+           v
++---------------------------+
+| tftServiceEPD()           |
+| - check epdDirty          |
+| - refresh small stripe    |
+| - spread over multiple    |
+|   calls                   |
++----------+----------------+
+           |
+           v
++----------------------+
+| Full display updated |
+| epdDirty = false     |
++----------------------+
+```
+
 ## Support for other epaper screen
 To support additional e-paper panels, refer to:
 
