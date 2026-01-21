@@ -2,14 +2,16 @@
 
 ## EPAPER for Microblocks ##
 
-This repository shows how to integrate epaper displays in MicroBlcoks. Fir this integration the [GxEPD2 library](https://github.com/ZinggJM/GxEPD2) is used. 
+This repository demonstrates how to integrate e-paper displays into MicroBlocks. The integration uses the [GxEPD2 library](https://github.com/ZinggJM/GxEPD2).
 
 ## Main integration
 
-The TFT driver is replaced with a GxEPD2 e-ink driver. All drawing primitives write into its buffer as before, but the slow panel refresh has been moved into `tftServiceEPD()`, which the VM loop calls in small partial steps so the interpreter never blocks on a full e-ink update.
+The standard TFT driver is replaced with a GxEPD2 e-ink driver. All drawing primitives continue to write into the display buffer as before, but the slow e-paper panel refresh has been moved to `tftServiceEPD()`.
+
+This service function is called from the VM loop and performs the refresh in small partial steps, ensuring that the interpreter never blocks on a full e-ink update.
 
 ## Connecting display
-The current integration uses an ESP32-WROOM microcontroller. It uses the default VSPI pins for the ESP32-WROOM:
+The current integration targets an ESP32-WROOM microcontroller and uses the default VSPI pins:
 
 ```
 		// SDA 	-- GPIO23 (MOSI)
@@ -24,19 +26,37 @@ The current integration uses an ESP32-WROOM microcontroller. It uses the default
 		// GND	-- GND
 ```
 ## Using the epaper
-You can use the `TFT library`. Use white (255,255,255) for background and black (0,0,0) for drawing black tft objects. `LED Display` can also be used, but don't forget to set display color to balck. Same for turtle graphics, set line volor to black.
+You can use the existing TFT library APIs.
 
-## Changes made for this integartion
-All changes are marked with `// epaper`  in the files `persist.c` and `tftPrims.cpp`.
+Use white (255, 255, 255) for the background
 
-- Added a new “display backend” in tftPrims.cpp
-    - a new board section is added to `tftPrimnscpp` defining a new global tft (which is derived from Arduino_GFX and thus compatible with all the tft methods already used in `tftPrims..cpp`
-    - overrode methods in tft `drawRGBBitmap`, `draw16bitRGBBitmap`, and `pushImage`
-- Overrode UPDATE_DISPLAY() to be non-blocking
+Use black (0, 0, 0) for drawing objects
 
-Original macro just did a taskSleep(-1) after slow operations.
-All the existing primitives (setPixel, rect, text, drawBuffer, …) stay unchanged; they still call UPDATE_DISPLAY(), which now just sets a flag instead of blocking.
-- Added a service function for refresh: tftServiceEPD(). Because this is going to be called from `persist.c` it needs a "C" wrapper.
+The LED Display can also be used, but make sure to set the display color to black.
+The same applies to turtle graphics: set the line color to black.
+
+## Changes made for this integration
+
+All changes are marked with `// epaper` in the following files:
+
+- `persist.c`
+- `tftPrims.cpp`
+
+### Display backend
+- Added a new display backend in `tftPrims.cpp`.
+- Added a new board section defining a global tft object. This object is derived from Arduino_GFX and is therefore compatible with all existing TFT methods used in `tftPrims.cpp`.
+- Overrode the following methods:
+	- `drawRGBBitmap`
+	- `draw16bitRGBBitmap`
+	- `pushImage`
+
+### Non-blocking display updates
+The UPDATE_DISPLAY() macro was overridden to be non-blocking.
+
+Originally, this macro called taskSleep(-1) after slow operations. All existing drawing primitives (setPixel, rect, text, drawBuffer, etc.) remain unchanged and still call UPDATE_DISPLAY(), which now only sets a flag instead of blocking.
+
+### E-paper refresh service
+-A new refresh service function, `ftServiceEPD()`, was added. Because it is called from `persist.c`, it uses a C linkage wrapper:
 
 ```cpp
 extern "C" void tftServiceEPD(void) {
@@ -46,9 +66,13 @@ extern "C" void tftServiceEPD(void) {
 }
 ```
 
-This function looks at epdDirty and refreshes only a stripe of the screen per call (using displayWindow()), not the entire panel at once and clears epdDirty when done.
+### VM integration
 
-- call `tftServiceEPD()` from the VM loop in `interp.c`
+`tftServiceEPD()` is called from the VM loop in `interp.c`, allowing the refresh process to run incrementally without blocking the interpreter.
 
 ## Support for other epaper screen
-Look in `https://github.com/ZinggJM/GxEPD2/blob/master/examples/GxEPD2_Example/GxEPD2_display_selection.h` for the matching epaper display and make changes in `tftPrims.cpp` accordingly.
+To support additional e-paper panels, refer to:
+
+`https://github.com/ZinggJM/GxEPD2/blob/master/examples/GxEPD2_Example/GxEPD2_display_selection.h`
+
+Select the appropriate display configuration and update `tftPrims.cpp` accordingly.
